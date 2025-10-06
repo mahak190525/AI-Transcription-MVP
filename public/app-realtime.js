@@ -109,7 +109,7 @@ async function startCapture() {
 
     // Start transcription session
     console.log('Starting transcription session...');
-    const sessionResponse = await fetch('/.netlify/functions/transcribe-stream', {
+    const sessionResponse = await fetch('/.netlify/functions/transcribe', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -154,7 +154,7 @@ async function startCapture() {
         // Send audio to transcription service
         try {
           console.log('Sending audio chunk to transcription service...');
-          const response = await fetch('/.netlify/functions/transcribe-stream', {
+          const response = await fetch('/.netlify/functions/transcribe', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -230,7 +230,7 @@ async function stopCapture() {
   if (currentSessionId) {
     try {
       console.log('Stopping transcription session...');
-      await fetch('/.netlify/functions/transcribe-stream', {
+      await fetch('/.netlify/functions/transcribe', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -310,7 +310,7 @@ async function generateAnswer() {
   window.currentTimeoutId = timeoutId;
 
   try {
-    const response = await fetch('/.netlify/functions/transcribe-stream', {
+    const response = await fetch('/.netlify/functions/transcribe', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -388,7 +388,7 @@ async function generateAnswerForSelection() {
   window.currentTimeoutId = timeoutId;
 
   try {
-    const response = await fetch('/.netlify/functions/transcribe-stream', {
+    const response = await fetch('/.netlify/functions/transcribe', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
