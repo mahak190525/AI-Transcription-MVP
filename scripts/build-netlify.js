@@ -8,7 +8,7 @@ console.log('Building for Netlify deployment...');
 // Copy the Netlify-specific files to the public directory
 const filesToCopy = [
   { src: 'public/index-netlify.html', dest: 'public/index.html' },
-  { src: 'public/app-netlify.js', dest: 'public/app.js' }
+  { src: 'public/app-realtime.js', dest: 'public/app.js' }
 ];
 
 filesToCopy.forEach(({ src, dest }) => {
