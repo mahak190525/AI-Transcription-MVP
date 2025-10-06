@@ -221,20 +221,6 @@
       50% { opacity: 0.5; }
     }
 
-    .netlify-notice {
-      background: #fff3cd;
-      border: 1px solid #ffeaa7;
-      border-radius: 8px;
-      padding: 16px;
-      margin-bottom: 20px;
-      color: #856404;
-    }
-
-    .netlify-notice h4 {
-      margin-bottom: 8px;
-      color: #856404;
-    }
-
     @media (max-width: 640px) {
       .container {
         padding: 24px;
@@ -256,11 +242,6 @@
     <h1>Live Transcribe AI</h1>
     <p class="subtitle">Real-time audio transcription with AI-powered insights</p>
 
-    <div class="netlify-notice" style="background: #d4edda; border-color: #c3e6cb; color: #155724;">
-      <h4>🎤 Real-time Transcription Active</h4>
-      <p>Real-time transcription is now enabled using AssemblyAI API. Make sure to set your ASSEMBLYAI_API_KEY in Netlify environment variables.</p>
-    </div>
-
     <div class="controls">
       <button id="startBtn">
         <span>▶</span> Start Capture
@@ -271,12 +252,12 @@
       <button id="generateBtn" disabled>
         <span>✨</span> Generate Answer
       </button>
-      <button id="testBtn" style="background: #805ad5; color: white;">
+      <!-- <button id="testBtn" style="background: #805ad5; color: white;">
         <span>🔍</span> Test Transcript
-      </button>
-      <button id="promoteBtn" style="background: #d69e2e; color: white;">
+      </button> -->
+      <!-- <button id="promoteBtn" style="background: #d69e2e; color: white;">
         <span>⬆️</span> Promote Partial
-      </button>
+      </button> -->
       <button id="generateSelectedBtn" style="background: #38a169; color: white;" disabled>
         <span>🎯</span> Answer Selected
       </button>
@@ -287,7 +268,7 @@
     <div class="transcript-box">
       <h3>Live Transcript</h3>
       <div id="transcript" class="transcript-text">
-        Click "Start Capture" to begin real-time transcription.
+        Waiting to start capture...
       </div>
     </div>
 
@@ -300,6 +281,6 @@
     </div>
   </div>
 
-  <script src="app-netlify.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>
