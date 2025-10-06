@@ -6,18 +6,20 @@
 [build.environment]
   NODE_VERSION = "18"
 
-# Force HTTPS redirect
+# Force HTTPS redirect (only for HTTP requests)
 [[redirects]]
-  from = "https://ai-teleprompt.netlify.app/*"
+  from = "http://ai-teleprompt.netlify.app/*"
   to = "https://ai-teleprompt.netlify.app/:splat"
   status = 301
   force = true
 
+# API redirects
 [[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/:splat"
   status = 200
 
+# SPA fallback (must be last)
 [[redirects]]
   from = "/*"
   to = "/index.html"
