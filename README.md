@@ -19,7 +19,7 @@ npm install
 
 2. Configure environment variables in `.env`:
 ```
-ASSEMBLYAI_API_KEY=f202720f68234fd190f9a65e3824ffc8
+ASSEMBLYAI_API_KEY=your_seembly_ai_api_key_here
 GEMINI_API_KEY=your_gemini_api_key_here
 ```
 
@@ -28,7 +28,6 @@ GEMINI_API_KEY=your_gemini_api_key_here
 **AssemblyAI:**
 - Sign up at https://www.assemblyai.com/
 - Get your API key from the dashboard
-- Default key provided: f202720f68234fd190f9a65e3824ffc8
 
 **Google Gemini:**
 - Get an API key at https://makersuite.google.com/app/apikey

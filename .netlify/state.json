@@ -1,0 +1,20 @@
+{
+	"geolocation": {
+		"data": {
+			"city": "Jaipur",
+			"country": {
+				"code": "IN",
+				"name": "India"
+			},
+			"subdivision": {
+				"code": "RJ",
+				"name": "Rajasthan"
+			},
+			"timezone": "Asia/Kolkata",
+			"latitude": 26.9136,
+			"longitude": 75.7858,
+			"postalCode": "302021"
+		},
+		"timestamp": 1759767087219
+	}
+}
