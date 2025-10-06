@@ -17,17 +17,11 @@ const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 const sessions = new Map();
 
 export const handler = async (event, context) => {
-  console.log('=== TRANSCRIBE FUNCTION CALLED ===');
-  console.log('Method:', event.httpMethod);
-  console.log('Body:', event.body ? JSON.parse(event.body) : 'No body');
-  
   // Handle CORS
   const headers = {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS, GET',
-    'Access-Control-Allow-Credentials': 'true',
-    'Access-Control-Max-Age': '86400'
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
   };
 
   if (event.httpMethod === 'OPTIONS') {
