@@ -1,30 +1,33 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
+const ASSEMBLYAI_API_KEY = process.env.ASSEMBLYAI_API_KEY;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 if (!GEMINI_API_KEY) {
   console.error('Missing GEMINI_API_KEY in environment variables');
 }
 
+if (!ASSEMBLYAI_API_KEY) {
+  console.error('Missing ASSEMBLYAI_API_KEY in environment variables');
+}
+
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
+// Store active sessions
+const sessions = new Map();
+
 export const handler = async (event, context) => {
-  // Handle CORS with proper headers for production
-  const origin = event.headers.origin || event.headers.Origin;
-  const allowedOrigins = [
-    'https://ai-teleprompt.netlify.app',
-    'https://your-custom-domain.com',
-    'http://localhost:3000',
-    'http://localhost:8888'
-  ];
+  console.log('=== TRANSCRIBE FUNCTION CALLED ===');
+  console.log('Method:', event.httpMethod);
+  console.log('Body:', event.body ? JSON.parse(event.body) : 'No body');
   
+  // Handle CORS
   const headers = {
-    'Access-Control-Allow-Origin': allowedOrigins.includes(origin) ? origin : '*',
+    'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
     'Access-Control-Allow-Methods': 'POST, OPTIONS, GET',
     'Access-Control-Allow-Credentials': 'true',
-    'Access-Control-Max-Age': '86400',
-    'Vary': 'Origin'
+    'Access-Control-Max-Age': '86400'
   };
 
   if (event.httpMethod === 'OPTIONS') {
@@ -44,57 +47,82 @@ export const handler = async (event, context) => {
   }
 
   try {
-    const { transcript, action, sessionId, audioData } = JSON.parse(event.body);
+    const { action, sessionId, audioData, transcript } = JSON.parse(event.body);
+    console.log('Action:', action);
 
-    // Handle different actions for real-time transcription
+    // Handle session start
     if (action === 'start') {
-      // Start a new transcription session
       const newSessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      sessions.set(newSessionId, {
+        transcript: '',
+        audioChunks: [],
+        lastUpdate: Date.now()
+      });
       
+      console.log('Session started:', newSessionId);
       return {
         statusCode: 200,
-        headers: {
-          ...headers,
-          'Content-Type': 'application/json',
-        },
+        headers: { ...headers, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sessionId: newSessionId,
-          message: 'Transcription session started'
+          message: 'Session started'
         }),
       };
     }
 
+    // Handle audio processing
     if (action === 'audio') {
-      // Process real audio data with AssemblyAI
+      console.log('Processing audio for session:', sessionId);
+      
       if (!ASSEMBLYAI_API_KEY) {
+        console.error('AssemblyAI API key missing');
         return {
           statusCode: 500,
           headers,
-          body: JSON.stringify({ error: 'AssemblyAI API key not configured' }),
+          body: JSON.stringify({ error: 'Transcription service not configured' }),
         };
       }
 
+      if (!sessionId || !sessions.has(sessionId)) {
+        console.error('Invalid session ID:', sessionId);
+        return {
+          statusCode: 400,
+          headers,
+          body: JSON.stringify({ error: 'Invalid session' }),
+        };
+      }
+
+      const session = sessions.get(sessionId);
+      
       try {
-        // Convert base64 audio to buffer
+        // Convert base64 to buffer
         const audioBuffer = Buffer.from(audioData, 'base64');
+        console.log('Audio buffer size:', audioBuffer.length);
         
-        // Create a temporary transcription job with AssemblyAI
+        // Add WAV header for proper audio format
+        const wavBuffer = createWavFile(audioBuffer);
+        
+        // Upload to AssemblyAI
+        console.log('Uploading to AssemblyAI...');
         const uploadResponse = await fetch('https://api.assemblyai.com/v2/upload', {
           method: 'POST',
           headers: {
             'Authorization': ASSEMBLYAI_API_KEY,
             'Content-Type': 'application/octet-stream'
           },
-          body: audioBuffer
+          body: wavBuffer
         });
 
         if (!uploadResponse.ok) {
-          throw new Error('Failed to upload audio to AssemblyAI');
+          const errorText = await uploadResponse.text();
+          console.error('Upload failed:', errorText);
+          throw new Error('Upload failed');
         }
 
         const { upload_url } = await uploadResponse.json();
+        console.log('Upload successful, creating transcript...');
 
-        // Create transcription job
+        // Create transcription
         const transcriptResponse = await fetch('https://api.assemblyai.com/v2/transcript', {
           method: 'POST',
           headers: {
@@ -103,96 +131,105 @@ export const handler = async (event, context) => {
           },
           body: JSON.stringify({
             audio_url: upload_url,
-            speech_model: 'best'
+            speech_model: 'best',
+            language_code: 'en'
           })
         });
 
         if (!transcriptResponse.ok) {
-          throw new Error('Failed to create transcription job');
+          const errorText = await transcriptResponse.text();
+          console.error('Transcript creation failed:', errorText);
+          throw new Error('Transcript creation failed');
         }
 
         const { id: transcriptId } = await transcriptResponse.json();
+        console.log('Transcript job created:', transcriptId);
 
-        // Poll for results (simplified polling)
+        // Poll for results
         let attempts = 0;
-        const maxAttempts = 10;
+        const maxAttempts = 30;
         
         while (attempts < maxAttempts) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
           const statusResponse = await fetch(`https://api.assemblyai.com/v2/transcript/${transcriptId}`, {
-            headers: {
-              'Authorization': ASSEMBLYAI_API_KEY
-            }
+            headers: { 'Authorization': ASSEMBLYAI_API_KEY }
           });
 
           const result = await statusResponse.json();
+          console.log(`Attempt ${attempts + 1}: Status = ${result.status}`);
           
           if (result.status === 'completed') {
+            const text = result.text || '';
+            console.log('Transcription completed:', text);
+            
+            if (text.trim()) {
+              session.transcript += (session.transcript ? ' ' : '') + text;
+              session.lastUpdate = Date.now();
+            }
+            
             return {
               statusCode: 200,
-              headers: {
-                ...headers,
-                'Content-Type': 'application/json',
-              },
+              headers: { ...headers, 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                sessionId: sessionId,
-                transcript: result.text || '',
-                partialTranscript: '',
+                sessionId,
+                transcript: text,
+                fullTranscript: session.transcript,
                 isFinal: true
               }),
             };
           } else if (result.status === 'error') {
-            throw new Error('Transcription failed: ' + result.error);
+            console.error('Transcription error:', result.error);
+            throw new Error('Transcription failed');
           }
           
-          // Wait before next attempt
-          await new Promise(resolve => setTimeout(resolve, 1000));
           attempts++;
         }
 
-        // If we get here, transcription is still processing
+        // Timeout
+        console.log('Transcription timeout');
         return {
           statusCode: 200,
-          headers: {
-            ...headers,
-            'Content-Type': 'application/json',
-          },
+          headers: { ...headers, 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            sessionId: sessionId,
+            sessionId,
             transcript: '',
+            fullTranscript: session.transcript,
             partialTranscript: 'Processing...',
             isFinal: false
           }),
         };
 
       } catch (error) {
-        console.error('AssemblyAI transcription error:', error);
+        console.error('Audio processing error:', error);
         return {
           statusCode: 500,
           headers,
           body: JSON.stringify({ 
-            error: 'Transcription failed', 
+            error: 'Audio processing failed',
             message: error.message 
           }),
         };
       }
     }
 
+    // Handle session stop
     if (action === 'stop') {
+      console.log('Stopping session:', sessionId);
+      if (sessionId && sessions.has(sessionId)) {
+        sessions.delete(sessionId);
+      }
       return {
         statusCode: 200,
-        headers: {
-          ...headers,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          message: 'Transcription session stopped'
-        }),
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: 'Session stopped' }),
       };
     }
 
+    // Handle AI answer generation
     if (action === 'generate_answer' || transcript) {
-      // Handle AI answer generation
       const textToAnalyze = transcript || '';
+      console.log('Generating answer for:', textToAnalyze.substring(0, 100) + '...');
       
       if (!textToAnalyze.trim()) {
         return {
@@ -202,21 +239,26 @@ export const handler = async (event, context) => {
         };
       }
 
-      console.log('Processing transcript:', textToAnalyze);
+      if (!GEMINI_API_KEY) {
+        return {
+          statusCode: 500,
+          headers,
+          body: JSON.stringify({ error: 'AI service not configured' }),
+        };
+      }
 
-      // Optimize model configuration for speed
-      const model = genAI.getGenerativeModel({ 
-        model: 'gemini-2.5-flash-lite',
-        generationConfig: {
-          temperature: 0.7,
-          topP: 0.8,
-          topK: 40,
-          maxOutputTokens: 1000,
-        }
-      });
-      
-      // Optimize prompt for faster processing
-      const prompt = `# System Role
+      try {
+        const model = genAI.getGenerativeModel({ 
+          model: 'gemini-2.5-flash-lite',
+          generationConfig: {
+            temperature: 0.7,
+            topP: 0.8,
+            topK: 40,
+            maxOutputTokens: 1000,
+          }
+        });
+        
+        const prompt = `# System Role
 You are a confident, articulate interview assistant powered by the Gemini 2.5 Flash model.
 
 # Task Specification
@@ -229,44 +271,83 @@ ${textToAnalyze}
 A concise, professional answer to the interview question.
 Answer ONLY in bullet points for clarity and quick pointers.`;
 
-      console.log('Sending to Gemini...');
-      const startTime = Date.now();
-      
-      const result = await model.generateContent(prompt);
-      const response = await result.response;
-      const answer = response.text();
-      
-      const endTime = Date.now();
-      console.log(`Gemini response received in ${endTime - startTime}ms`);
+        console.log('Sending to Gemini...');
+        const startTime = Date.now();
+        
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        const answer = response.text();
+        
+        const endTime = Date.now();
+        console.log(`Gemini response received in ${endTime - startTime}ms`);
 
-      return {
-        statusCode: 200,
-        headers: {
-          ...headers,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          answer: answer,
-          processingTime: endTime - startTime
-        }),
-      };
+        return {
+          statusCode: 200,
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            answer: answer,
+            processingTime: endTime - startTime
+          }),
+        };
+      } catch (error) {
+        console.error('Gemini error:', error);
+        return {
+          statusCode: 500,
+          headers,
+          body: JSON.stringify({ 
+            error: 'AI processing failed',
+            message: error.message 
+          }),
+        };
+      }
     }
 
     return {
       statusCode: 400,
       headers,
-      body: JSON.stringify({ error: 'Invalid action or missing transcript' }),
+      body: JSON.stringify({ error: 'Invalid action' }),
     };
+
   } catch (error) {
-    console.error('Error processing transcript:', error);
-    
+    console.error('Function error:', error);
     return {
       statusCode: 500,
       headers,
       body: JSON.stringify({ 
-        error: 'Failed to process transcript',
+        error: 'Internal server error',
         message: error.message 
       }),
     };
   }
 };
+
+// Helper function to create WAV file with proper headers
+function createWavFile(pcmBuffer) {
+  const sampleRate = 16000;
+  const channels = 1;
+  const bitsPerSample = 16;
+  const dataSize = pcmBuffer.length;
+  
+  const header = Buffer.alloc(44);
+  
+  // RIFF header
+  header.write('RIFF', 0);
+  header.writeUInt32LE(36 + dataSize, 4);
+  header.write('WAVE', 8);
+  
+  // Format chunk
+  header.write('fmt ', 12);
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20); // PCM
+  header.writeUInt16LE(channels, 22);
+  header.writeUInt32LE(sampleRate, 24);
+  header.writeUInt32LE(sampleRate * channels * bitsPerSample / 8, 28);
+  header.writeUInt16LE(channels * bitsPerSample / 8, 32);
+  header.writeUInt16LE(bitsPerSample, 34);
+  
+  // Data chunk
+  header.write('data', 36);
+  header.writeUInt32LE(dataSize, 40);
+  
+  return Buffer.concat([header, pcmBuffer]);
+}

@@ -109,7 +109,7 @@ async function startCapture() {
 
     // Start transcription session
     console.log('Starting transcription session...');
-    const sessionResponse = await fetch('/.netlify/functions/transcribe-stream', {
+    const sessionResponse = await fetch('/.netlify/functions/transcribe', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -151,44 +151,48 @@ async function startCapture() {
         const pcmData = floatTo16BitPCM(downsampled);
         const base64Audio = btoa(String.fromCharCode(...new Uint8Array(pcmData)));
 
-        // Send audio to transcription service
-        try {
-          console.log('Sending audio chunk to transcription service...');
-          const response = await fetch('/.netlify/functions/transcribe-stream', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-            },
-            credentials: 'same-origin',
-            body: JSON.stringify({
-              action: 'audio',
-              sessionId: currentSessionId,
-              audioData: base64Audio
-            })
-          });
-
-          const data = await response.json();
-          console.log('Transcription response:', data);
+        // Send audio to transcription service (throttled to every 3 seconds)
+        const now = Date.now();
+        if (!window.lastAudioSent || now - window.lastAudioSent > 3000) {
+          window.lastAudioSent = now;
           
-          if (response.ok) {
-            // Handle both new transcript and full transcript
-            if (data.transcript && data.transcript.trim()) {
-              // New transcript received
-              console.log('New transcript received:', data.transcript);
-              stableTranscript = data.fullTranscript || stableTranscript;
-              partialTranscript = '';
-              updateTranscript();
-            } else if (data.partialTranscript) {
-              // Partial/status update
-              partialTranscript = data.partialTranscript;
-              updateTranscript();
+          try {
+            console.log('Sending audio chunk to transcription service...');
+            const response = await fetch('/.netlify/functions/transcribe', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+              },
+              body: JSON.stringify({
+                action: 'audio',
+                sessionId: currentSessionId,
+                audioData: base64Audio
+              })
+            });
+
+            const data = await response.json();
+            console.log('Transcription response:', data);
+            
+            if (response.ok) {
+              // Handle both new transcript and full transcript
+              if (data.transcript && data.transcript.trim()) {
+                // New transcript received
+                console.log('New transcript received:', data.transcript);
+                stableTranscript = data.fullTranscript || (stableTranscript + ' ' + data.transcript);
+                partialTranscript = '';
+                updateTranscript();
+              } else if (data.partialTranscript) {
+                // Partial/status update
+                partialTranscript = data.partialTranscript;
+                updateTranscript();
+              }
+            } else {
+              console.error('Transcription error:', data.error);
             }
-          } else {
-            console.error('Transcription error:', data.error);
+          } catch (error) {
+            console.error('Error sending audio data:', error);
           }
-        } catch (error) {
-          console.error('Error sending audio data:', error);
         }
       }
     };
@@ -230,7 +234,7 @@ async function stopCapture() {
   if (currentSessionId) {
     try {
       console.log('Stopping transcription session...');
-      await fetch('/.netlify/functions/transcribe-stream', {
+      await fetch('/.netlify/functions/transcribe', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -310,7 +314,7 @@ async function generateAnswer() {
   window.currentTimeoutId = timeoutId;
 
   try {
-    const response = await fetch('/.netlify/functions/transcribe-stream', {
+    const response = await fetch('/.netlify/functions/transcribe', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -388,7 +392,7 @@ async function generateAnswerForSelection() {
   window.currentTimeoutId = timeoutId;
 
   try {
-    const response = await fetch('/.netlify/functions/transcribe-stream', {
+    const response = await fetch('/.netlify/functions/transcribe', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
