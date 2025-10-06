@@ -1,4 +1,3 @@
-let ws = null;
 let audioContext = null;
 let audioStream = null;
 let processor = null;
@@ -104,117 +103,61 @@ async function startCapture() {
       }
     });
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    ws = new WebSocket(`${protocol}//${window.location.host}`);
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    
+    // Load the audio worklet
+    try {
+      await audioContext.audioWorklet.addModule('audio-processor.js');
+    } catch (error) {
+      console.error('Failed to load audio worklet:', error);
+      updateStatus('Failed to initialize audio processing', false);
+      return;
+    }
 
-    ws.onopen = async () => {
-      updateStatus('🔴 Recording... Speak into your microphone', true);
+    const source = audioContext.createMediaStreamSource(audioStream);
+    processor = new AudioWorkletNode(audioContext, 'audio-processor');
 
-      audioContext = new (window.AudioContext || window.webkitAudioContext)();
-      
-      // Load the audio worklet
-      try {
-        await audioContext.audioWorklet.addModule('audio-processor.js');
-      } catch (error) {
-        console.error('Failed to load audio worklet:', error);
-        updateStatus('Failed to initialize audio processing', false);
-        return;
-      }
-
-      const source = audioContext.createMediaStreamSource(audioStream);
-      processor = new AudioWorkletNode(audioContext, 'audio-processor');
-
-      processor.port.onmessage = (e) => {
-        if (e.data.type === 'audioData' && ws && ws.readyState === WebSocket.OPEN) {
-          const inputData = e.data.audioData;
-          const downsampled = downsampleBuffer(inputData, audioContext.sampleRate, 16000);
-          const pcmData = floatTo16BitPCM(downsampled);
-          const base64Audio = btoa(String.fromCharCode(...new Uint8Array(pcmData)));
-
-          ws.send(JSON.stringify({
-            type: 'audio',
-            audio: base64Audio
-          }));
-        }
-      };
-
-      source.connect(processor);
-      processor.connect(audioContext.destination);
-
-      ws.send(JSON.stringify({ type: 'start' }));
-
-      startBtn.disabled = true;
-      stopBtn.disabled = false;
-      generateBtn.disabled = false;
-      generateSelectedBtn.disabled = true;
-      generateSelectedBtn.style.opacity = '0.5';
-
-      stableTranscript = '';
-      partialTranscript = '';
-      updateTranscript();
-      answerBox.classList.remove('show');
-    };
-
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-
-      if (data.type === 'transcript') {
-        console.log('Transcript received:', data);
-        if (data.isFinal) {
-          stableTranscript += (stableTranscript ? ' ' : '') + data.text;
-          partialTranscript = '';
-          console.log('Updated stableTranscript:', stableTranscript);
-        } else {
-          partialTranscript = data.text;
-          console.log('Updated partialTranscript:', partialTranscript);
-          
-          // Clear existing timeout
-          if (partialTranscriptTimeout) {
-            clearTimeout(partialTranscriptTimeout);
-          }
-          
-          // Set timeout to promote partial to stable after 3 seconds of no updates
-          partialTranscriptTimeout = setTimeout(() => {
-            promotePartialToStable();
-          }, 3000);
-        }
-        updateTranscript();
-      } else if (data.type === 'answer') {
-        // Clear timeout if it exists
-        if (window.currentTimeoutId) {
-          clearTimeout(window.currentTimeoutId);
-          window.currentTimeoutId = null;
-        }
+    processor.port.onmessage = (e) => {
+      if (e.data.type === 'audioData') {
+        const inputData = e.data.audioData;
+        const downsampled = downsampleBuffer(inputData, audioContext.sampleRate, 16000);
+        const pcmData = floatTo16BitPCM(downsampled);
         
-        answerEl.textContent = data.text;
-        answerBox.classList.add('show');
-        loadingSpinner.style.display = 'none';
-      } else if (data.type === 'error') {
-        // Clear timeout if it exists
-        if (window.currentTimeoutId) {
-          clearTimeout(window.currentTimeoutId);
-          window.currentTimeoutId = null;
-        }
-        
-        updateStatus('Error: ' + data.message, false);
-        loadingSpinner.style.display = 'none';
+        // For Netlify, we'll simulate transcription by updating partial transcript
+        // In a real implementation, you'd send this to a transcription service
+        simulateTranscription();
       }
     };
 
-    ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
-      updateStatus('Connection error', false);
-      stopCapture();
-    };
+    source.connect(processor);
+    processor.connect(audioContext.destination);
 
-    ws.onclose = () => {
-      updateStatus('Connection closed', false);
-      stopCapture();
-    };
+    startBtn.disabled = true;
+    stopBtn.disabled = false;
+    generateBtn.disabled = false;
+    generateSelectedBtn.disabled = true;
+    generateSelectedBtn.style.opacity = '0.5';
+
+    stableTranscript = '';
+    partialTranscript = '';
+    updateTranscript();
+    answerBox.classList.remove('show');
+
+    updateStatus('🔴 Recording... Speak into your microphone', true);
 
   } catch (error) {
     console.error('Error starting capture:', error);
     updateStatus('Failed to access microphone. Please grant permission.', false);
+  }
+}
+
+function simulateTranscription() {
+  // This is a placeholder for actual transcription
+  // In a real implementation, you would send audio data to a transcription service
+  // For demo purposes, we'll just show a message
+  if (!partialTranscript) {
+    partialTranscript = 'Click "Generate Answer" to test with sample text...';
+    updateTranscript();
   }
 }
 
@@ -244,13 +187,6 @@ function stopCapture() {
     audioStream = null;
   }
 
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type: 'stop' }));
-    ws.close();
-  }
-
-  ws = null;
-
   startBtn.disabled = false;
   stopBtn.disabled = true;
   generateBtn.disabled = true;
@@ -260,21 +196,14 @@ function stopCapture() {
   updateStatus('Capture stopped', false);
 }
 
-function generateAnswer() {
+async function generateAnswer() {
   console.log('=== GENERATE ANSWER DEBUG ===');
-  console.log('WebSocket state:', ws ? ws.readyState : 'null');
-  console.log('WebSocket OPEN state:', ws ? (ws.readyState === WebSocket.OPEN) : 'null');
   console.log('stableTranscript:', JSON.stringify(stableTranscript));
   console.log('stableTranscript length:', stableTranscript.length);
   console.log('stableTranscript trimmed:', JSON.stringify(stableTranscript.trim()));
   console.log('stableTranscript trimmed length:', stableTranscript.trim().length);
   console.log('partialTranscript:', JSON.stringify(partialTranscript));
   console.log('=============================');
-
-  if (!ws || ws.readyState !== WebSocket.OPEN) {
-    updateStatus('Not connected', false);
-    return;
-  }
 
   // Promote any partial transcript to stable before generating answer
   if (partialTranscript.trim()) {
@@ -302,13 +231,39 @@ function generateAnswer() {
   // Store timeout ID for cleanup
   window.currentTimeoutId = timeoutId;
 
-  const transcriptData = {
-    type: 'generate',
-    transcript: fullTranscript
-  };
-  
-  console.log('Sending transcript data:', transcriptData);
-  ws.send(JSON.stringify(transcriptData));
+  try {
+    const response = await fetch('/.netlify/functions/transcribe', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      credentials: 'same-origin',
+      body: JSON.stringify({
+        transcript: fullTranscript
+      })
+    });
+
+    const data = await response.json();
+
+    // Clear timeout if it exists
+    if (window.currentTimeoutId) {
+      clearTimeout(window.currentTimeoutId);
+      window.currentTimeoutId = null;
+    }
+
+    if (response.ok) {
+      answerEl.textContent = data.answer;
+      console.log('Response received in', data.processingTime, 'ms');
+    } else {
+      updateStatus('Error: ' + data.error, false);
+    }
+  } catch (error) {
+    console.error('Error generating answer:', error);
+    updateStatus('Error: Failed to generate answer', false);
+  } finally {
+    loadingSpinner.style.display = 'none';
+  }
 }
 
 function handleTextSelection() {
@@ -327,20 +282,14 @@ function handleTextSelection() {
   }
 }
 
-function generateAnswerForSelection() {
+async function generateAnswerForSelection() {
   const selection = window.getSelection();
   const selectedText = selection.toString().trim();
   
   console.log('=== GENERATE ANSWER FOR SELECTION DEBUG ===');
   console.log('Selected text:', JSON.stringify(selectedText));
   console.log('Selected text length:', selectedText.length);
-  console.log('WebSocket state:', ws ? ws.readyState : 'null');
   console.log('===========================================');
-
-  if (!ws || ws.readyState !== WebSocket.OPEN) {
-    updateStatus('Not connected', false);
-    return;
-  }
 
   if (!selectedText) {
     updateStatus('No text selected. Please select some text from the transcript.', false);
@@ -359,13 +308,39 @@ function generateAnswerForSelection() {
   // Store timeout ID for cleanup
   window.currentTimeoutId = timeoutId;
 
-  const transcriptData = {
-    type: 'generate',
-    transcript: selectedText
-  };
-  
-  console.log('Sending selected text data:', transcriptData);
-  ws.send(JSON.stringify(transcriptData));
+  try {
+    const response = await fetch('/.netlify/functions/transcribe', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      credentials: 'same-origin',
+      body: JSON.stringify({
+        transcript: selectedText
+      })
+    });
+
+    const data = await response.json();
+
+    // Clear timeout if it exists
+    if (window.currentTimeoutId) {
+      clearTimeout(window.currentTimeoutId);
+      window.currentTimeoutId = null;
+    }
+
+    if (response.ok) {
+      answerEl.textContent = data.answer;
+      console.log('Response received in', data.processingTime, 'ms');
+    } else {
+      updateStatus('Error: ' + data.error, false);
+    }
+  } catch (error) {
+    console.error('Error generating answer:', error);
+    updateStatus('Error: Failed to generate answer', false);
+  } finally {
+    loadingSpinner.style.display = 'none';
+  }
 }
 
 function testTranscript() {
@@ -374,7 +349,6 @@ function testTranscript() {
   console.log('stableTranscript length:', stableTranscript.length);
   console.log('stableTranscript trimmed:', stableTranscript.trim());
   console.log('partialTranscript:', partialTranscript);
-  console.log('WebSocket state:', ws ? ws.readyState : 'null');
   console.log('========================');
   
   if (stableTranscript.trim()) {
