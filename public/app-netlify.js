@@ -236,9 +236,7 @@ async function generateAnswer() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Accept': 'application/json',
       },
-      credentials: 'same-origin',
       body: JSON.stringify({
         transcript: fullTranscript
       })
@@ -313,9 +311,7 @@ async function generateAnswerForSelection() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Accept': 'application/json',
       },
-      credentials: 'same-origin',
       body: JSON.stringify({
         transcript: selectedText
       })

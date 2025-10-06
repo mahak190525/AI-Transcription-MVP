@@ -7,8 +7,7 @@
     "build": "node scripts/build-netlify.js",
     "dev": "node server.js",
     "netlify:dev": "netlify dev",
-    "build:netlify": "node scripts/build-netlify.js",
-    "deploy:prod": "node scripts/deploy-production.js"
+    "build:netlify": "node scripts/build-netlify.js"
   },
   "dependencies": {
     "@google/generative-ai": "^0.19.0",

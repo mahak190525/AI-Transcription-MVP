@@ -1,4 +1,3 @@
-
 class AudioProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
@@ -11,20 +10,23 @@ class AudioProcessor extends AudioWorkletProcessor {
     const input = inputs[0];
     if (input.length > 0) {
       const inputData = input[0];
+      
       for (let i = 0; i < inputData.length; i++) {
         this.buffer[this.bufferIndex] = inputData[i];
         this.bufferIndex++;
         
         if (this.bufferIndex >= this.bufferSize) {
+          // Send the buffer to the main thread
           this.port.postMessage({
             type: 'audioData',
-            audioData: this.buffer.slice()
+            audioData: new Float32Array(this.buffer)
           });
           this.bufferIndex = 0;
         }
       }
     }
-    return true;
+    
+    return true; // Keep the processor alive
   }
 }
 

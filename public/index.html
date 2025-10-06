@@ -221,20 +221,6 @@
       50% { opacity: 0.5; }
     }
 
-    .netlify-notice {
-      background: #fff3cd;
-      border: 1px solid #ffeaa7;
-      border-radius: 8px;
-      padding: 16px;
-      margin-bottom: 20px;
-      color: #856404;
-    }
-
-    .netlify-notice h4 {
-      margin-bottom: 8px;
-      color: #856404;
-    }
-
     @media (max-width: 640px) {
       .container {
         padding: 24px;
@@ -255,11 +241,6 @@
   <div class="container">
     <h1>Live Transcribe AI</h1>
     <p class="subtitle">Real-time audio transcription with AI-powered insights</p>
-
-    <div class="netlify-notice">
-      <h4>🚀 Netlify Deployment Notice</h4>
-      <p>This is a simplified version for Netlify deployment. Real-time transcription is simulated. For full WebSocket functionality, consider deploying to Vercel, Railway, or Heroku.</p>
-    </div>
 
     <div class="controls">
       <button id="startBtn">
@@ -287,7 +268,7 @@
     <div class="transcript-box">
       <h3>Live Transcript</h3>
       <div id="transcript" class="transcript-text">
-        Click "Start Capture" to begin. Note: This is a demo version for Netlify deployment.
+        Waiting to start capture...
       </div>
     </div>
 
@@ -300,6 +281,6 @@
     </div>
   </div>
 
-  <script src="app-netlify.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>

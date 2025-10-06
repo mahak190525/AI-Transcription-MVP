@@ -9,22 +9,11 @@ if (!GEMINI_API_KEY) {
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
 export const handler = async (event, context) => {
-  // Handle CORS with proper headers for production
-  const origin = event.headers.origin || event.headers.Origin;
-  const allowedOrigins = [
-    'https://ai-teleprompt.netlify.app/',
-    'https://your-custom-domain.com',
-    'http://localhost:3000',
-    'http://localhost:8888'
-  ];
-  
+  // Handle CORS
   const headers = {
-    'Access-Control-Allow-Origin': allowedOrigins.includes(origin) ? origin : '*',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS, GET',
-    'Access-Control-Allow-Credentials': 'true',
-    'Access-Control-Max-Age': '86400',
-    'Vary': 'Origin'
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
   };
 
   if (event.httpMethod === 'OPTIONS') {
