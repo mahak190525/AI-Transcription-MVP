@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Live Transcribe AI</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .container {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      max-width: 900px;
+      width: 100%;
+      padding: 40px;
+    }
+
+    h1 {
+      font-size: 32px;
+      margin-bottom: 10px;
+      color: #1a202c;
+    }
+
+    .subtitle {
+      color: #718096;
+      margin-bottom: 30px;
+      font-size: 14px;
+    }
+
+    .controls {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 30px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      padding: 12px 24px;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    #startBtn {
+      background: #48bb78;
+      color: white;
+    }
+
+    #startBtn:hover:not(:disabled) {
+      background: #38a169;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(72, 187, 120, 0.4);
+    }
+
+    #stopBtn {
+      background: #f56565;
+      color: white;
+    }
+
+    #stopBtn:hover:not(:disabled) {
+      background: #e53e3e;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(245, 101, 101, 0.4);
+    }
+
+    #generateBtn {
+      background: #4299e1;
+      color: white;
+    }
+
+    #generateBtn:hover:not(:disabled) {
+      background: #3182ce;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(66, 153, 225, 0.4);
+    }
+
+    .status {
+      padding: 12px 16px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      font-size: 14px;
+      font-weight: 500;
+      display: none;
+    }
+
+    .status.active {
+      display: block;
+      background: #c6f6d5;
+      color: #22543d;
+      border-left: 4px solid #48bb78;
+    }
+
+    .status.inactive {
+      display: block;
+      background: #fed7d7;
+      color: #742a2a;
+      border-left: 4px solid #f56565;
+    }
+
+    .transcript-box {
+      background: #f7fafc;
+      border: 2px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+      min-height: 200px;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+
+    .transcript-box h3 {
+      font-size: 18px;
+      margin-bottom: 12px;
+      color: #2d3748;
+    }
+
+    .transcript-text {
+      line-height: 1.6;
+      color: #4a5568;
+      user-select: text;
+      cursor: text;
+    }
+
+    .transcript-text::selection {
+      background: #4299e1;
+      color: white;
+    }
+
+    .transcript-text::-moz-selection {
+      background: #4299e1;
+      color: white;
+    }
+
+    .partial {
+      color: #a0aec0;
+      font-style: italic;
+    }
+
+    .answer-box {
+      background: #edf2f7;
+      border: 2px solid #cbd5e0;
+      border-radius: 8px;
+      padding: 20px;
+      display: none;
+    }
+
+    .answer-box.show {
+      display: block;
+    }
+
+    .answer-box h3 {
+      font-size: 18px;
+      margin-bottom: 12px;
+      color: #2d3748;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .answer-text {
+      line-height: 1.6;
+      color: #4a5568;
+      white-space: pre-wrap;
+    }
+
+    .loading {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid #cbd5e0;
+      border-top-color: #4299e1;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .indicator {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 4px;
+    }
+
+    .indicator.recording {
+      background: #f56565;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .netlify-notice {
+      background: #fff3cd;
+      border: 1px solid #ffeaa7;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 20px;
+      color: #856404;
+    }
+
+    .netlify-notice h4 {
+      margin-bottom: 8px;
+      color: #856404;
+    }
+
+    @media (max-width: 640px) {
+      .container {
+        padding: 24px;
+      }
+
+      h1 {
+        font-size: 24px;
+      }
+
+      button {
+        font-size: 14px;
+        padding: 10px 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Live Transcribe AI</h1>
+    <p class="subtitle">Real-time audio transcription with AI-powered insights</p>
+
+    <div class="netlify-notice">
+      <h4>🚀 Netlify Deployment Notice</h4>
+      <p>This is a simplified version for Netlify deployment. Real-time transcription is simulated. For full WebSocket functionality, consider deploying to Vercel, Railway, or Heroku.</p>
+    </div>
+
+    <div class="controls">
+      <button id="startBtn">
+        <span>▶</span> Start Capture
+      </button>
+      <button id="stopBtn" disabled>
+        <span>⏹</span> Stop Capture
+      </button>
+      <button id="generateBtn" disabled>
+        <span>✨</span> Generate Answer
+      </button>
+      <button id="testBtn" style="background: #805ad5; color: white;">
+        <span>🔍</span> Test Transcript
+      </button>
+      <button id="promoteBtn" style="background: #d69e2e; color: white;">
+        <span>⬆️</span> Promote Partial
+      </button>
+      <button id="generateSelectedBtn" style="background: #38a169; color: white;" disabled>
+        <span>🎯</span> Answer Selected
+      </button>
+    </div>
+
+    <div id="status" class="status"></div>
+
+    <div class="transcript-box">
+      <h3>Live Transcript</h3>
+      <div id="transcript" class="transcript-text">
+        Click "Start Capture" to begin. Note: This is a demo version for Netlify deployment.
+      </div>
+    </div>
+
+    <div id="answerBox" class="answer-box">
+      <h3>
+        <span>🤖</span> AI Response
+        <span id="loadingSpinner" class="loading" style="display: none;"></span>
+      </h3>
+      <div id="answer" class="answer-text"></div>
+    </div>
+  </div>
+
+  <script src="app-netlify.js"></script>
+</body>
+</html>
