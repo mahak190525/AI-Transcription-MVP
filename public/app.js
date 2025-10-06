@@ -21,8 +21,8 @@ const loadingSpinner = document.getElementById('loadingSpinner');
 startBtn.addEventListener('click', startCapture);
 stopBtn.addEventListener('click', stopCapture);
 generateBtn.addEventListener('click', generateAnswer);
-testBtn.addEventListener('click', testTranscript);
-promoteBtn.addEventListener('click', promotePartialToStable);
+// testBtn.addEventListener('click', testTranscript);
+// promoteBtn.addEventListener('click', promotePartialToStable);
 generateSelectedBtn.addEventListener('click', generateAnswerForSelection);
 
 // Add event listeners for text selection
@@ -313,15 +313,28 @@ function generateAnswer() {
 
 function handleTextSelection() {
   const selection = window.getSelection();
-  const selectedText = selection.toString().trim();
+  const range = selection.getRangeAt(0);
   
-  console.log('Text selection changed:', selectedText);
+  // Check if the selection is within the transcript element
+  let container = range.commonAncestorContainer;
+  while (container && container !== transcriptEl) {
+    container = container.parentNode;
+  }
   
-  // Enable/disable the "Answer Selected" button based on selection
-  if (selectedText && selectedText.length > 0) {
-    generateSelectedBtn.disabled = false;
-    generateSelectedBtn.style.opacity = '1';
+  // Only handle selection if it's within the transcript element
+  if (container === transcriptEl) {
+    const selectedText = selection.toString().trim();
+    console.log('Text selection changed:', selectedText);
+    
+    if (selectedText && selectedText.length > 0) {
+      generateSelectedBtn.disabled = false;
+      generateSelectedBtn.style.opacity = '1';
+    } else {
+      generateSelectedBtn.disabled = true;
+      generateSelectedBtn.style.opacity = '0.5';
+    }
   } else {
+    // Selection is outside transcript element
     generateSelectedBtn.disabled = true;
     generateSelectedBtn.style.opacity = '0.5';
   }
@@ -329,11 +342,57 @@ function handleTextSelection() {
 
 function generateAnswerForSelection() {
   const selection = window.getSelection();
-  const selectedText = selection.toString().trim();
+  if (selection.rangeCount === 0) {
+    updateStatus('No text selected.', false);
+    return;
+  }
+  
+  const range = selection.getRangeAt(0);
+  
+  // Create a temporary div to handle HTML content properly
+  const tempDiv = document.createElement('div');
+  
+  // Clone the range contents to preserve the original
+  tempDiv.appendChild(range.cloneContents());
+  
+  // Remove any partial transcript spans
+  const partialSpans = tempDiv.getElementsByClassName('partial');
+  Array.from(partialSpans).forEach(span => {
+    span.remove();
+  });
+  
+  // Get the cleaned text content
+  const selectedText = tempDiv.textContent.trim();
   
   console.log('=== GENERATE ANSWER FOR SELECTION DEBUG ===');
-  console.log('Selected text:', JSON.stringify(selectedText));
+  console.log('Raw selected text:', JSON.stringify(selectedText));
   console.log('Selected text length:', selectedText.length);
+  
+  // Get the selected range's start and end containers
+  const startContainer = range.startContainer;
+  const endContainer = range.endContainer;
+  
+  // Verify the selection is within the transcript element
+  let isWithinTranscript = false;
+  let current = startContainer;
+  while (current && current !== document.body) {
+    if (current === transcriptEl) {
+      isWithinTranscript = true;
+      break;
+    }
+    current = current.parentNode;
+  }
+  
+  console.log('Selection within transcript:', isWithinTranscript);
+  console.log('Start container:', startContainer.nodeType, startContainer.textContent);
+  console.log('End container:', endContainer.nodeType, endContainer.textContent);
+  
+  // Only proceed if selection is within transcript element
+  if (!isWithinTranscript) {
+    updateStatus('Please select text from the transcript only.', false);
+    return;
+  }
+  
   console.log('WebSocket state:', ws ? ws.readyState : 'null');
   console.log('===========================================');
 
@@ -359,9 +418,21 @@ function generateAnswerForSelection() {
   // Store timeout ID for cleanup
   window.currentTimeoutId = timeoutId;
 
+  // Double check we're not accidentally getting full transcript
+  const allText = transcriptEl.textContent;
+  const containsFullTranscript = allText.includes(selectedText) && selectedText.length === allText.length;
+  
+  if (containsFullTranscript) {
+    console.error('Warning: Selected text matches full transcript, this may be an error');
+    updateStatus('Error: Selection appears to be full transcript. Please try selecting again.', false);
+    return;
+  }
+
+  // Prepare the data to send, explicitly stating it's a selection
   const transcriptData = {
     type: 'generate',
-    transcript: selectedText
+    transcript: selectedText,
+    isSelection: true  // Add flag to indicate this is selected text
   };
   
   console.log('Sending selected text data:', transcriptData);
