@@ -1,19 +1,26 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
+const ASSEMBLYAI_API_KEY = process.env.ASSEMBLYAI_API_KEY;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 if (!GEMINI_API_KEY) {
   console.error('Missing GEMINI_API_KEY in environment variables');
 }
 
+if (!ASSEMBLYAI_API_KEY) {
+  console.error('Missing ASSEMBLYAI_API_KEY in environment variables');
+}
+
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
+// Store active sessions and their accumulated transcripts
+const activeSessions = new Map();
+
 export const handler = async (event, context) => {
-  // Handle CORS with proper headers for production
+  // Handle CORS
   const origin = event.headers.origin || event.headers.Origin;
   const allowedOrigins = [
     'https://ai-teleprompt.netlify.app',
-    'https://your-custom-domain.com',
     'http://localhost:3000',
     'http://localhost:8888'
   ];
@@ -35,14 +42,6 @@ export const handler = async (event, context) => {
     };
   }
 
-  if (event.httpMethod !== 'POST') {
-    return {
-      statusCode: 405,
-      headers,
-      body: JSON.stringify({ error: 'Method not allowed' }),
-    };
-  }
-
   try {
     const { transcript, action, sessionId, audioData } = JSON.parse(event.body);
 
@@ -50,6 +49,14 @@ export const handler = async (event, context) => {
     if (action === 'start') {
       // Start a new transcription session
       const newSessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      
+      // Initialize session
+      activeSessions.set(newSessionId, {
+        transcript: '',
+        partialTranscript: '',
+        audioChunks: [],
+        lastProcessed: Date.now()
+      });
       
       return {
         statusCode: 200,
@@ -59,7 +66,7 @@ export const handler = async (event, context) => {
         },
         body: JSON.stringify({
           sessionId: newSessionId,
-          message: 'Transcription session started'
+          message: 'Real-time transcription session started'
         }),
       };
     }
@@ -74,82 +81,115 @@ export const handler = async (event, context) => {
         };
       }
 
+      if (!sessionId || !activeSessions.has(sessionId)) {
+        return {
+          statusCode: 400,
+          headers,
+          body: JSON.stringify({ error: 'Invalid session ID' }),
+        };
+      }
+
+      const session = activeSessions.get(sessionId);
+
       try {
         // Convert base64 audio to buffer
         const audioBuffer = Buffer.from(audioData, 'base64');
         
-        // Create a temporary transcription job with AssemblyAI
-        const uploadResponse = await fetch('https://api.assemblyai.com/v2/upload', {
-          method: 'POST',
-          headers: {
-            'Authorization': ASSEMBLYAI_API_KEY,
-            'Content-Type': 'application/octet-stream'
-          },
-          body: audioBuffer
-        });
-
-        if (!uploadResponse.ok) {
-          throw new Error('Failed to upload audio to AssemblyAI');
-        }
-
-        const { upload_url } = await uploadResponse.json();
-
-        // Create transcription job
-        const transcriptResponse = await fetch('https://api.assemblyai.com/v2/transcript', {
-          method: 'POST',
-          headers: {
-            'Authorization': ASSEMBLYAI_API_KEY,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            audio_url: upload_url,
-            speech_model: 'best'
-          })
-        });
-
-        if (!transcriptResponse.ok) {
-          throw new Error('Failed to create transcription job');
-        }
-
-        const { id: transcriptId } = await transcriptResponse.json();
-
-        // Poll for results (simplified polling)
-        let attempts = 0;
-        const maxAttempts = 10;
+        // Add to session's audio chunks
+        session.audioChunks.push(audioBuffer);
         
-        while (attempts < maxAttempts) {
-          const statusResponse = await fetch(`https://api.assemblyai.com/v2/transcript/${transcriptId}`, {
+        // Process accumulated audio if enough time has passed (batch processing)
+        const now = Date.now();
+        if (now - session.lastProcessed > 2000) { // Process every 2 seconds
+          session.lastProcessed = now;
+          
+          // Combine all audio chunks
+          const combinedAudio = Buffer.concat(session.audioChunks);
+          session.audioChunks = []; // Clear processed chunks
+          
+          // Upload to AssemblyAI
+          const uploadResponse = await fetch('https://api.assemblyai.com/v2/upload', {
+            method: 'POST',
             headers: {
-              'Authorization': ASSEMBLYAI_API_KEY
-            }
+              'Authorization': ASSEMBLYAI_API_KEY,
+              'Content-Type': 'application/octet-stream'
+            },
+            body: combinedAudio
           });
 
-          const result = await statusResponse.json();
-          
-          if (result.status === 'completed') {
-            return {
-              statusCode: 200,
-              headers: {
-                ...headers,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                sessionId: sessionId,
-                transcript: result.text || '',
-                partialTranscript: '',
-                isFinal: true
-              }),
-            };
-          } else if (result.status === 'error') {
-            throw new Error('Transcription failed: ' + result.error);
+          if (!uploadResponse.ok) {
+            throw new Error('Failed to upload audio to AssemblyAI');
           }
+
+          const { upload_url } = await uploadResponse.json();
+
+          // Create transcription job
+          const transcriptResponse = await fetch('https://api.assemblyai.com/v2/transcript', {
+            method: 'POST',
+            headers: {
+              'Authorization': ASSEMBLYAI_API_KEY,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              audio_url: upload_url,
+              speech_model: 'best',
+              language_code: 'en'
+            })
+          });
+
+          if (!transcriptResponse.ok) {
+            throw new Error('Failed to create transcription job');
+          }
+
+          const { id: transcriptId } = await transcriptResponse.json();
+
+          // Poll for results (with timeout)
+          let attempts = 0;
+          const maxAttempts = 15; // 15 seconds max
           
-          // Wait before next attempt
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          attempts++;
+          while (attempts < maxAttempts) {
+            const statusResponse = await fetch(`https://api.assemblyai.com/v2/transcript/${transcriptId}`, {
+              headers: {
+                'Authorization': ASSEMBLYAI_API_KEY
+              }
+            });
+
+            const result = await statusResponse.json();
+            
+            if (result.status === 'completed') {
+              const newText = result.text || '';
+              if (newText.trim()) {
+                // Add to session transcript
+                session.transcript += (session.transcript ? ' ' : '') + newText;
+                session.partialTranscript = '';
+                
+                return {
+                  statusCode: 200,
+                  headers: {
+                    ...headers,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    sessionId: sessionId,
+                    transcript: newText,
+                    fullTranscript: session.transcript,
+                    partialTranscript: '',
+                    isFinal: true
+                  }),
+                };
+              }
+              break;
+            } else if (result.status === 'error') {
+              throw new Error('Transcription failed: ' + result.error);
+            }
+            
+            // Wait before next attempt
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            attempts++;
+          }
         }
 
-        // If we get here, transcription is still processing
+        // Return current state (no new transcription yet)
         return {
           statusCode: 200,
           headers: {
@@ -159,7 +199,8 @@ export const handler = async (event, context) => {
           body: JSON.stringify({
             sessionId: sessionId,
             transcript: '',
-            partialTranscript: 'Processing...',
+            fullTranscript: session.transcript,
+            partialTranscript: 'Listening...',
             isFinal: false
           }),
         };
@@ -178,6 +219,11 @@ export const handler = async (event, context) => {
     }
 
     if (action === 'stop') {
+      // Clean up session
+      if (sessionId && activeSessions.has(sessionId)) {
+        activeSessions.delete(sessionId);
+      }
+      
       return {
         statusCode: 200,
         headers: {
@@ -257,14 +303,15 @@ Answer ONLY in bullet points for clarity and quick pointers.`;
       headers,
       body: JSON.stringify({ error: 'Invalid action or missing transcript' }),
     };
+
   } catch (error) {
-    console.error('Error processing transcript:', error);
+    console.error('Error in transcribe-stream function:', error);
     
     return {
       statusCode: 500,
       headers,
       body: JSON.stringify({ 
-        error: 'Failed to process transcript',
+        error: 'Internal server error',
         message: error.message 
       }),
     };

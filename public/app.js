@@ -94,6 +94,8 @@ function floatTo16BitPCM(float32Array) {
 
 async function startCapture() {
   try {
+    console.log('=== START CAPTURE DEBUG ===');
+    console.log('Starting capture process...');
     updateStatus('Requesting microphone access...', true);
 
     audioStream = await navigator.mediaDevices.getUserMedia({
@@ -106,7 +108,8 @@ async function startCapture() {
     });
 
     // Start transcription session
-    const sessionResponse = await fetch('/.netlify/functions/assemblyai-realtime', {
+    console.log('Starting transcription session...');
+    const sessionResponse = await fetch('/.netlify/functions/transcribe-stream', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -150,7 +153,8 @@ async function startCapture() {
 
         // Send audio to transcription service
         try {
-          const response = await fetch('/.netlify/functions/assemblyai-realtime', {
+          console.log('Sending audio chunk to transcription service...');
+          const response = await fetch('/.netlify/functions/transcribe-stream', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -165,29 +169,23 @@ async function startCapture() {
           });
 
           const data = await response.json();
+          console.log('Transcription response:', data);
           
-          if (response.ok && data.transcript) {
-            console.log('Transcript received:', data);
-            
-            if (data.isFinal) {
-              stableTranscript += (stableTranscript ? ' ' : '') + data.transcript;
+          if (response.ok) {
+            // Handle both new transcript and full transcript
+            if (data.transcript && data.transcript.trim()) {
+              // New transcript received
+              console.log('New transcript received:', data.transcript);
+              stableTranscript = data.fullTranscript || stableTranscript;
               partialTranscript = '';
-              console.log('Updated stableTranscript:', stableTranscript);
-            } else {
-              partialTranscript = data.transcript;
-              console.log('Updated partialTranscript:', partialTranscript);
-              
-              // Clear existing timeout
-              if (partialTranscriptTimeout) {
-                clearTimeout(partialTranscriptTimeout);
-              }
-              
-              // Set timeout to promote partial to stable after 3 seconds of no updates
-              partialTranscriptTimeout = setTimeout(() => {
-                promotePartialToStable();
-              }, 3000);
+              updateTranscript();
+            } else if (data.partialTranscript) {
+              // Partial/status update
+              partialTranscript = data.partialTranscript;
+              updateTranscript();
             }
-            updateTranscript();
+          } else {
+            console.error('Transcription error:', data.error);
           }
         } catch (error) {
           console.error('Error sending audio data:', error);
@@ -231,7 +229,8 @@ async function stopCapture() {
   // Stop transcription session
   if (currentSessionId) {
     try {
-      await fetch('/.netlify/functions/assemblyai-realtime', {
+      console.log('Stopping transcription session...');
+      await fetch('/.netlify/functions/transcribe-stream', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -311,7 +310,7 @@ async function generateAnswer() {
   window.currentTimeoutId = timeoutId;
 
   try {
-    const response = await fetch('/.netlify/functions/assemblyai-realtime', {
+    const response = await fetch('/.netlify/functions/transcribe-stream', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -389,7 +388,7 @@ async function generateAnswerForSelection() {
   window.currentTimeoutId = timeoutId;
 
   try {
-    const response = await fetch('/.netlify/functions/assemblyai-realtime', {
+    const response = await fetch('/.netlify/functions/transcribe-stream', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
